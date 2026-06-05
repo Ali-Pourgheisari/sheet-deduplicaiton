@@ -374,8 +374,8 @@ def build_unique_dataframe(unique_names):
 st.markdown("""
 <div class="hero">
   <div class="hero-eyebrow">&#9632; Exclusion List Automation</div>
-  <h1>Company <span>Deduplicator</span></h1>
-  <p>Upload your main database and a new list — get back only the companies that don't already exist, with fuzzy matching to catch name variations.</p>
+  <h1>List <span>Deduplicator</span></h1>
+  <p>Upload your main database and a new list — get back only the rows that don't already exist, with fuzzy matching to catch name variations.</p>
 </div>
 """, unsafe_allow_html=True)
 
