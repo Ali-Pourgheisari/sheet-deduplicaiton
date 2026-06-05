@@ -1,0 +1,562 @@
+import streamlit as st
+import pandas as pd
+import re
+import io
+from rapidfuzz import fuzz, process
+
+# ── Page config ──────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="Company Deduplicator",
+    page_icon="🏢",
+    layout="wide",
+)
+
+# ── Styling ───────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+  }
+
+  .stApp {
+    background: #080b12;
+    color: #c9d1e0;
+  }
+
+  h1, h2, h3 { font-family: 'JetBrains Mono', monospace !important; }
+
+  /* ── Hero ── */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #0d1117 0%, #0f1923 60%, #0a1a14 100%);
+    border: 1px solid #1e2d3d;
+    border-radius: 12px;
+    padding: 2.4rem 2.8rem;
+    margin-bottom: 2.2rem;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 220px; height: 220px;
+    background: radial-gradient(circle, rgba(0,255,136,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    color: #00e07a;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+  }
+  .hero h1 {
+    color: #f0f4ff;
+    font-size: 1.85rem;
+    margin: 0 0 0.5rem 0;
+    letter-spacing: -0.02em;
+  }
+  .hero h1 span { color: #00ff88; }
+  .hero p { color: #5a6a7e; margin: 0; font-size: 0.92rem; line-height: 1.6; }
+
+  /* ── Upload panels ── */
+  .upload-panel {
+    background: linear-gradient(160deg, #0d1117 0%, #0c1520 100%);
+    border: 1px solid #1e2d3d;
+    border-radius: 10px;
+    padding: 1.4rem 1.6rem 1rem;
+    height: 100%;
+  }
+  .upload-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: #00e07a;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  /* ── Section headers ── */
+  .section-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: #3a4a5e;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    border-bottom: 1px solid #141e2a;
+    padding-bottom: 0.55rem;
+    margin: 1.8rem 0 1.1rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* ── Stat boxes ── */
+  .stat-box {
+    background: linear-gradient(160deg, #0d1420 0%, #0a1018 100%);
+    border: 1px solid #1a2535;
+    border-radius: 10px;
+    padding: 1.3rem 1rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-box::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #00ff8833, transparent);
+  }
+  .stat-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2.1rem;
+    font-weight: 700;
+    color: #00ff88;
+    line-height: 1;
+    margin-bottom: 0.35rem;
+  }
+  .stat-num.warn { color: #ff6b35; }
+  .stat-label {
+    font-size: 0.7rem;
+    color: #3a4a5e;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+
+  /* ── Match cards ── */
+  .match-card {
+    background: linear-gradient(135deg, #0d1520 0%, #0a1018 100%);
+    border: 1px solid #1a2535;
+    border-radius: 8px;
+    padding: 0.65rem 1rem;
+    margin-bottom: 0.35rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: border-color 0.15s;
+  }
+  .match-card:hover { border-color: #2a3d52; }
+  .match-score {
+    color: #ff6b35;
+    font-weight: 600;
+    background: rgba(255,107,53,0.1);
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    white-space: nowrap;
+    margin-left: 0.8rem;
+    flex-shrink: 0;
+  }
+  .match-score.high { color: #00ff88; background: rgba(0,255,136,0.08); }
+  .match-names { color: #7a8a9e; overflow: hidden; }
+  .match-main  { color: #c9d1e0; font-weight: 500; }
+  .match-arrow { color: #2a3a4e; margin: 0 0.4rem; }
+
+  /* ── Threshold panel ── */
+  .threshold-panel {
+    background: linear-gradient(160deg, #0d1117 0%, #0c1520 100%);
+    border: 1px solid #1e2d3d;
+    border-radius: 10px;
+    padding: 1.2rem 1.6rem 0.8rem;
+    margin-bottom: 0.5rem;
+  }
+
+  /* ── Streamlit overrides ── */
+  div[data-testid="stFileUploader"] {
+    background: transparent !important;
+    border: 1px dashed #1e2d3d !important;
+    border-radius: 8px !important;
+    padding: 0.6rem !important;
+  }
+  div[data-testid="stFileUploader"]:hover {
+    border-color: #00ff8844 !important;
+  }
+
+  .stSlider > div > div > div { background: #00ff88 !important; }
+  [data-testid="stSlider"] [data-testid="stTickBarMin"],
+  [data-testid="stSlider"] [data-testid="stTickBarMax"] { color: #3a4a5e !important; }
+
+  .stButton > button {
+    background: linear-gradient(135deg, #00ff88, #00cc6e) !important;
+    color: #060a0e !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-weight: 600 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 0.5rem 1.2rem !important;
+    font-size: 0.8rem !important;
+    letter-spacing: 0.04em !important;
+    width: auto !important;
+    box-shadow: 0 0 20px rgba(0,255,136,0.15) !important;
+  }
+  .stButton > button:hover {
+    background: linear-gradient(135deg, #00ff99, #00e07a) !important;
+    box-shadow: 0 0 28px rgba(0,255,136,0.25) !important;
+  }
+
+  .stButton > button[data-testid="baseButton-primary"] {
+    min-height: 2.4rem !important;
+  }
+
+  .stButton > button[data-testid="baseButton-secondary"] {
+    background: #0d1520 !important;
+    color: #7a8a9e !important;
+    border: 1px solid #1e2d3d !important;
+    box-shadow: none !important;
+    padding: 0.22rem 0.5rem !important;
+    font-size: 0.7rem !important;
+    letter-spacing: 0.02em !important;
+    min-height: 1.8rem !important;
+    width: 100% !important;
+    border-radius: 6px !important;
+  }
+  .stButton > button[data-testid="baseButton-secondary"]:hover {
+    background: #131e2e !important;
+    color: #c9d1e0 !important;
+    border-color: #2a3d52 !important;
+  }
+
+  .stDataFrame {
+    border: 1px solid #1a2535 !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+  }
+
+  .stAlert { border-radius: 8px !important; }
+
+  div[data-testid="stDownloadButton"] button {
+    background: #0d1520 !important;
+    color: #00ff88 !important;
+    border: 1px solid #1e3a28 !important;
+    box-shadow: none !important;
+    border-radius: 7px !important;
+    font-size: 0.78rem !important;
+  }
+  div[data-testid="stDownloadButton"] button:hover {
+    background: #0f1e2a !important;
+    border-color: #00ff8844 !important;
+  }
+</style>
+""", unsafe_allow_html=True)
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+SUFFIXES = re.compile(
+    r'\b(inc|incorporated|ltd|limited|llc|llp|lp|plc|gmbh|ag|sa|sas|bv|nv|'
+    r'corp|corporation|co|company|group|holding|holdings|international|intl|'
+    r'ug|kgaa|kg|eg|oy|ab|as|aps|srl|sro|sl|bvba|sprl|'
+    r'technologies|technology|tech|solutions|services|systems|'
+    r'consulting|ventures|partners|associates|enterprises)\b',
+    re.IGNORECASE
+)
+
+RESULTS_SESSION_KEY = "dedup_results"
+MOVED_SESSION_KEY = "dedup_moved_duplicate_ids"
+
+def clean_for_output(name: str) -> str:
+    """Remove numbers and demo tags for the output file."""
+    if not isinstance(name, str):
+        return ""
+    n = name.strip()
+    n = re.sub(r'\(\s*[Dd]emo[^)]*\)', '', n)   # (Demo Account), (Demo: 34708)
+    n = re.sub(r'\b\d{4,}\b', '', n)             # standalone 4+ digit IDs
+    n = re.sub(r'\s*\d+\s*$', '', n)             # trailing numbers
+    n = re.sub(r'\(\s*\)', '', n)                # leftover empty parentheses
+    n = re.sub(r'\s+', ' ', n).strip()
+    return n
+
+def normalize(name: str) -> str:
+    if not isinstance(name, str):
+        return ""
+    n = name.lower().strip()
+    n = re.sub(r'[^\w\s]', ' ', n)   # punctuation → space
+    n = SUFFIXES.sub('', n)           # remove legal suffixes
+    n = re.sub(r'\s*\d+\s*$', '', n) # trailing numbers
+    n = re.sub(r'\b\d{4,}\b', '', n) # standalone ID numbers
+    n = re.sub(r'\s+', ' ', n).strip()
+    return n
+
+def detect_company_col(df: pd.DataFrame) -> str:
+    hints = ['company', 'name', 'organisation', 'organization', 'firm', 'account']
+    for col in df.columns:
+        if any(h in col.lower() for h in hints):
+            return col
+    return df.columns[0]   # fallback: first column
+
+def find_duplicates(main_names, new_names, threshold):
+    """
+    For each name in new_names, check if a fuzzy match exists in main_names.
+    Returns:
+      duplicates  – list of dicts with id, raw_name, matched_main_name, score
+      unique_new  – list of new_names with no match
+    """
+    norm_main = [normalize(n) for n in main_names]
+    duplicates, unique_new = [], []
+
+    for idx, raw in enumerate(new_names):
+        norm = normalize(raw)
+        if not norm:
+            continue
+        result = process.extractOne(norm, norm_main, scorer=fuzz.token_sort_ratio)
+        if result and result[1] >= threshold:
+            matched_original = main_names[result[2]]
+            duplicates.append({
+                "id": idx,
+                "raw_name": raw,
+                "matched_main_name": matched_original,
+                "score": result[1],
+            })
+        else:
+            unique_new.append(raw)
+
+    return duplicates, unique_new
+
+
+def store_results(payload: dict) -> None:
+    previous_payload = st.session_state.get(RESULTS_SESSION_KEY)
+    previous_moved = list(st.session_state.get(MOVED_SESSION_KEY, []))
+    st.session_state[RESULTS_SESSION_KEY] = payload
+    if previous_payload and previous_payload.get("signature") == payload.get("signature"):
+        st.session_state[MOVED_SESSION_KEY] = previous_moved
+    else:
+        st.session_state[MOVED_SESSION_KEY] = []
+
+
+def get_visible_results():
+    payload = st.session_state.get(RESULTS_SESSION_KEY)
+    if not payload:
+        return None
+
+    moved_ids = set(st.session_state.get(MOVED_SESSION_KEY, []))
+    promoted = [item for item in payload["duplicates"] if item["id"] in moved_ids]
+    remaining_duplicates = [item for item in payload["duplicates"] if item["id"] not in moved_ids]
+    unique_names = payload["unique_new"] + [item["raw_name"] for item in promoted]
+
+    return {
+        "signature": payload["signature"],
+        "main_names": payload["main_names"],
+        "new_names": payload["new_names"],
+        "duplicates": remaining_duplicates,
+        "promoted": promoted,
+        "unique_names": unique_names,
+    }
+
+
+def promote_duplicate(duplicate_id: int) -> None:
+    moved_ids = list(st.session_state.get(MOVED_SESSION_KEY, []))
+    if duplicate_id not in moved_ids:
+        moved_ids.append(duplicate_id)
+        st.session_state[MOVED_SESSION_KEY] = moved_ids
+
+
+def demote_duplicate(duplicate_id: int) -> None:
+    moved_ids = list(st.session_state.get(MOVED_SESSION_KEY, []))
+    if duplicate_id in moved_ids:
+        moved_ids.remove(duplicate_id)
+        st.session_state[MOVED_SESSION_KEY] = moved_ids
+
+
+def build_unique_dataframe(unique_names):
+    cleaned = [clean_for_output(name) for name in unique_names]
+    cleaned = [name for name in cleaned if name]
+    return pd.DataFrame({"Company Name": cleaned})
+
+# ── UI ────────────────────────────────────────────────────────────────────────
+
+st.markdown("""
+<div class="hero">
+  <div class="hero-eyebrow">&#9632; Exclusion List Automation</div>
+  <h1>Company <span>Deduplicator</span></h1>
+  <p>Upload your main database and a new list — get back only the companies that don't already exist, with fuzzy matching to catch name variations.</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ── Upload ─────────────────────────────────────────────────────────────────────
+col_a, col_b = st.columns(2, gap="medium")
+
+with col_a:
+    st.markdown('<div class="upload-label">&#9632;&nbsp; 01 &mdash; Main database</div>', unsafe_allow_html=True)
+    main_file = st.file_uploader("Main database", type=["xlsx", "xls", "csv"], key="main",
+                                  label_visibility="collapsed")
+
+with col_b:
+    st.markdown('<div class="upload-label">&#9632;&nbsp; 02 &mdash; New companies</div>', unsafe_allow_html=True)
+    new_file  = st.file_uploader("New companies to check", type=["xlsx", "xls", "csv"], key="new",
+                                  label_visibility="collapsed")
+
+st.markdown("")
+st.markdown('<div class="section-header">&#9632;&nbsp; 03 &mdash; Match sensitivity</div>', unsafe_allow_html=True)
+
+thresh_col, hint_col = st.columns([3, 1])
+with thresh_col:
+    threshold = st.slider(
+        "Match threshold",
+        min_value=50, max_value=100, value=70,
+        help="Lower = catches more variations. 70 is a good default.",
+        label_visibility="collapsed"
+    )
+with hint_col:
+    st.markdown(f"<div style='font-family:JetBrains Mono,monospace;font-size:1.4rem;font-weight:700;color:#00ff88;text-align:center;padding-top:0.3rem'>{threshold}<span style='font-size:0.7rem;color:#3a4a5e;margin-left:2px'>/ 100</span></div>", unsafe_allow_html=True)
+
+st.markdown(f"<small style='color:#2a3a4e'>Scores &ge; {threshold} are flagged as duplicates &nbsp;&mdash;&nbsp; lower threshold catches more variations like <em>Acme Corp</em> vs <em>Acme Corporation</em></small>", unsafe_allow_html=True)
+st.markdown("")
+
+run = st.button("&#9889;  Run Deduplication", type="primary", use_container_width=True)
+
+# ── Processing ────────────────────────────────────────────────────────────────
+if run:
+    if not main_file or not new_file:
+        st.error("Please upload both files before running.")
+        st.stop()
+
+    try:
+        read = lambda f: pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
+
+        with st.spinner("Reading files…"):
+            df_main = read(main_file)
+            df_new  = read(new_file)
+
+        main_col = detect_company_col(df_main)
+        new_col  = detect_company_col(df_new)
+
+        st.markdown(f"<small style='color:#555'>Detected columns → main: <code>{main_col}</code> | new: <code>{new_col}</code></small>", unsafe_allow_html=True)
+
+        main_names = df_main[main_col].dropna().astype(str).tolist()
+        new_names  = df_new[new_col].dropna().astype(str).tolist()
+
+        with st.spinner("Fuzzy matching…"):
+            duplicates, unique_new = find_duplicates(main_names, new_names, threshold)
+
+        store_results({
+            "signature": {
+                "main_file": getattr(main_file, "name", ""),
+                "main_size": getattr(main_file, "size", None),
+                "new_file": getattr(new_file, "name", ""),
+                "new_size": getattr(new_file, "size", None),
+                "threshold": threshold,
+            },
+            "main_names": main_names,
+            "new_names": new_names,
+            "duplicates": duplicates,
+            "unique_new": unique_new,
+        })
+
+    except Exception as e:
+        st.error(f"Something went wrong: {e}")
+        st.exception(e)
+
+visible_results = get_visible_results()
+
+if visible_results:
+    remaining_duplicates = visible_results["duplicates"]
+    promoted = visible_results["promoted"]
+    unique_names = visible_results["unique_names"]
+
+    # ── Stats ──────────────────────────────────────────────────────────────
+    st.markdown('<div class="section-header">&#9632;&nbsp; Results</div>', unsafe_allow_html=True)
+
+    s1, s2, s3, s4 = st.columns(4, gap="small")
+    with s1:
+        st.markdown(f'<div class="stat-box"><div class="stat-num">{len(visible_results["main_names"]):,}</div><div class="stat-label">Main DB</div></div>', unsafe_allow_html=True)
+    with s2:
+        st.markdown(f'<div class="stat-box"><div class="stat-num">{len(visible_results["new_names"]):,}</div><div class="stat-label">Checked</div></div>', unsafe_allow_html=True)
+    with s3:
+        st.markdown(f'<div class="stat-box"><div class="stat-num warn">{len(remaining_duplicates):,}</div><div class="stat-label">Duplicates</div></div>', unsafe_allow_html=True)
+    with s4:
+        st.markdown(f'<div class="stat-box"><div class="stat-num">{len(unique_names):,}</div><div class="stat-label">New &amp; Unique</div></div>', unsafe_allow_html=True)
+
+    st.markdown("")
+
+    if promoted:
+        st.markdown(f"<small style='color:#777'>Manually promoted from duplicates: {len(promoted)}</small>", unsafe_allow_html=True)
+        st.markdown("")
+
+    # ── Columns: unique | duplicates ───────────────────────────────────────
+    left, right = st.columns([1.2, 1])
+
+    with left:
+        st.markdown('<div class="section-header">&#10003;&nbsp; Not duplicated &mdash; ready to add</div>', unsafe_allow_html=True)
+        if unique_names:
+            df_out = build_unique_dataframe(unique_names)
+            st.dataframe(df_out, use_container_width=True, hide_index=True)
+
+            if promoted:
+                st.markdown('<div class="section-header" style="margin-top:1.2rem">&#8626;&nbsp; Manually promoted from duplicates</div>', unsafe_allow_html=True)
+                for item in sorted(promoted, key=lambda row: -row["score"]):
+                    p_left, p_right = st.columns([0.82, 0.18])
+                    score_class = "high" if item["score"] >= 90 else ""
+                    with p_left:
+                        st.markdown(f"""
+                        <div class="match-card">
+                          <span class="match-names"><span class="match-main">{item["raw_name"]}</span><span class="match-arrow"> matched </span>{item["matched_main_name"]}</span>
+                          <span class="match-score {score_class}">{item["score"]}%</span>
+                        </div>""", unsafe_allow_html=True)
+                    with p_right:
+                        if st.button("Return", key=f"return_duplicate_{item['id']}", type="secondary"):
+                            demote_duplicate(item["id"])
+                            st.rerun()
+
+            st.markdown("")
+            dl_a, dl_b = st.columns(2, gap="small")
+            csv_bytes = df_out.to_csv(index=False).encode("utf-8")
+            with dl_a:
+                st.download_button(
+                    label="&#11015;  Download CSV",
+                    data=csv_bytes,
+                    file_name="new_unique_companies.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+            with dl_b:
+                excel_buf = io.BytesIO()
+                with pd.ExcelWriter(excel_buf, engine="openpyxl") as writer:
+                    df_out.to_excel(writer, index=False, sheet_name="Unique Companies")
+                st.download_button(
+                    label="&#11015;  Download Excel",
+                    data=excel_buf.getvalue(),
+                    file_name="new_unique_companies.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+        else:
+            st.info("All companies in the new file already exist in the main list.")
+
+    with right:
+        st.markdown('<div class="section-header">&#8635;&nbsp; Matched as duplicates</div>', unsafe_allow_html=True)
+        if remaining_duplicates:
+            for duplicate in sorted(remaining_duplicates, key=lambda item: -item["score"]):
+                row_left, row_right = st.columns([0.82, 0.18])
+                score_class = "high" if duplicate["score"] >= 90 else ""
+                with row_left:
+                    st.markdown(f"""
+                    <div class="match-card">
+                      <span class="match-names"><span class="match-main">{duplicate["raw_name"]}</span><span class="match-arrow"> &rarr; </span>{duplicate["matched_main_name"]}</span>
+                      <span class="match-score {score_class}">{duplicate["score"]}%</span>
+                    </div>""", unsafe_allow_html=True)
+                with row_right:
+                    if st.button("Move", key=f"move_duplicate_{duplicate['id']}", type="secondary"):
+                        promote_duplicate(duplicate["id"])
+                        st.rerun()
+        else:
+            st.success("No duplicates found.")
+
+else:
+    st.markdown("""
+    <div style='background:linear-gradient(135deg,#0d1117,#0c1520);border:1px dashed #1e2d3d;border-radius:10px;padding:2.5rem;text-align:center;margin-top:1rem'>
+      <div style='font-family:JetBrains Mono,monospace;font-size:2rem;color:#1a2d3e;margin-bottom:0.8rem'>&#9632;</div>
+      <div style='color:#3a4a5e;font-size:0.9rem'>Upload both files and hit <strong style="color:#00ff8866">Run Deduplication</strong> to get started.</div>
+      <div style='color:#1e2d3d;font-size:0.78rem;margin-top:0.5rem'>Supports .xlsx, .xls, and .csv</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ── Footer ─────────────────────────────────────────────────────────────────────
+st.markdown("<br><hr style='border-color:#0d1520;margin-top:2rem'>", unsafe_allow_html=True)
+st.markdown("<small style='color:#1e2d3d;font-family:JetBrains Mono,monospace;font-size:0.68rem'>RapidFuzz token_sort_ratio &mdash; handles reordering, abbreviations &amp; legal suffix differences. Promoted matches appear in downloads immediately.</small>", unsafe_allow_html=True)
