@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 import io
+import csv
 from rapidfuzz import fuzz, process
 
 # ── Page config ──────────────────────────────────────────────────────────────
@@ -418,7 +419,16 @@ if run:
         st.stop()
 
     try:
-        read = lambda f: pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
+        def read(f):
+            if f.name.endswith('.csv'):
+                sample = f.read(4096).decode('utf-8', errors='replace')
+                f.seek(0)
+                try:
+                    sep = csv.Sniffer().sniff(sample, delimiters=',;').delimiter
+                except csv.Error:
+                    sep = ','
+                return pd.read_csv(f, sep=sep)
+            return pd.read_excel(f)
 
         with st.spinner("Reading files…"):
             df_main = read(main_file)
