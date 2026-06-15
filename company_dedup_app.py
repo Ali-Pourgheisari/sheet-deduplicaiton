@@ -285,12 +285,23 @@ def normalize(name: str) -> str:
     n = re.sub(r'\s+', ' ', n).strip()
     return n
 
-def detect_company_col(df: pd.DataFrame) -> str:
+def detect_company_col(columns) -> str:
     hints = ['company', 'name', 'organisation', 'organization', 'firm', 'account']
-    for col in df.columns:
+    for col in columns:
         if any(h in col.lower() for h in hints):
             return col
-    return df.columns[0]   # fallback: first column
+    return columns[0]
+
+def read_file(f, nrows=None):
+    if f.name.endswith('.csv'):
+        sample = f.read(4096).decode('utf-8', errors='replace')
+        f.seek(0)
+        try:
+            sep = csv.Sniffer().sniff(sample, delimiters=',;').delimiter
+        except csv.Error:
+            sep = ','
+        return pd.read_csv(f, sep=sep, nrows=nrows)
+    return pd.read_excel(f, nrows=nrows)
 
 def find_duplicates(main_names, new_names, threshold):
     """
@@ -394,7 +405,39 @@ with col_b:
                                   label_visibility="collapsed")
 
 st.markdown("")
-st.markdown('<div class="section-header">&#9632;&nbsp; 03 &mdash; Match sensitivity</div>', unsafe_allow_html=True)
+
+# ── Column selection ───────────────────────────────────────────────────────────
+main_col_choice = None
+new_col_choice  = None
+
+if main_file and new_file:
+    try:
+        main_cols = read_file(main_file, nrows=0).columns.tolist()
+        new_cols  = read_file(new_file,  nrows=0).columns.tolist()
+        main_file.seek(0)
+        new_file.seek(0)
+
+        st.markdown('<div class="section-header">&#9632;&nbsp; 03 &mdash; Column to compare</div>', unsafe_allow_html=True)
+        col_sel_a, col_sel_b = st.columns(2, gap="medium")
+        with col_sel_a:
+            default_main = detect_company_col(main_cols)
+            main_col_choice = st.selectbox(
+                "Main database — company column",
+                main_cols,
+                index=main_cols.index(default_main),
+            )
+        with col_sel_b:
+            default_new = detect_company_col(new_cols)
+            new_col_choice = st.selectbox(
+                "New list — company column",
+                new_cols,
+                index=new_cols.index(default_new),
+            )
+        st.markdown("")
+    except Exception:
+        pass  # if preview read fails, fall back to auto-detect at run time
+
+st.markdown('<div class="section-header">&#9632;&nbsp; 04 &mdash; Match sensitivity</div>', unsafe_allow_html=True)
 
 thresh_col, hint_col = st.columns([3, 1])
 with thresh_col:
@@ -419,25 +462,12 @@ if run:
         st.stop()
 
     try:
-        def read(f):
-            if f.name.endswith('.csv'):
-                sample = f.read(4096).decode('utf-8', errors='replace')
-                f.seek(0)
-                try:
-                    sep = csv.Sniffer().sniff(sample, delimiters=',;').delimiter
-                except csv.Error:
-                    sep = ','
-                return pd.read_csv(f, sep=sep)
-            return pd.read_excel(f)
-
         with st.spinner("Reading files…"):
-            df_main = read(main_file)
-            df_new  = read(new_file)
+            df_main = read_file(main_file)
+            df_new  = read_file(new_file)
 
-        main_col = detect_company_col(df_main)
-        new_col  = detect_company_col(df_new)
-
-        st.markdown(f"<small style='color:#555'>Detected columns → main: <code>{main_col}</code> | new: <code>{new_col}</code></small>", unsafe_allow_html=True)
+        main_col = main_col_choice or detect_company_col(df_main.columns.tolist())
+        new_col  = new_col_choice  or detect_company_col(df_new.columns.tolist())
 
         main_names = df_main[main_col].dropna().astype(str).tolist()
         new_names  = df_new[new_col].dropna().astype(str).tolist()
