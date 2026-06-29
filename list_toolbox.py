@@ -657,6 +657,39 @@ def find_matches(main_names, new_names, threshold):
     return matches, unique_new
 
 
+def find_internal_duplicates(names: list, threshold: int) -> list:
+    """
+    Within-list fuzzy dedup.
+    Returns [{id_keeper, id_dup, name_keeper, name_dup, score}].
+    Lower-index entry is the keeper; higher-index duplicates are flagged.
+    """
+    norm = [normalize(n) for n in names]
+    duplicates = []
+    dup_ids: set = set()
+
+    for i, norm_i in enumerate(norm):
+        if not norm_i or i in dup_ids:
+            continue
+        for j in range(i + 1, len(norm)):
+            if j in dup_ids:
+                continue
+            norm_j = norm[j]
+            if not norm_j:
+                continue
+            score = fuzz.token_sort_ratio(norm_i, norm_j)
+            if score >= threshold:
+                dup_ids.add(j)
+                duplicates.append({
+                    "id_keeper": i,
+                    "id_dup": j,
+                    "name_keeper": names[i],
+                    "name_dup": names[j],
+                    "score": score,
+                })
+
+    return duplicates
+
+
 def store_results(payload: dict) -> None:
     previous_payload = st.session_state.get(RESULTS_SESSION_KEY)
     previous_moved = list(st.session_state.get(MOVED_SESSION_KEY, []))
@@ -675,7 +708,11 @@ def get_visible_results():
     moved_ids = set(st.session_state.get(MOVED_SESSION_KEY, []))
     promoted = [item for item in payload["matches"] if item["id"] in moved_ids]
     remaining_matches = [item for item in payload["matches"] if item["id"] not in moved_ids]
-    unique_indices = payload["unique_new"] + [item["id"] for item in promoted]
+
+    internal_dups = payload.get("internal_dups", [])
+    dup_ids = {item["id_dup"] for item in internal_dups}
+    clean_unique = [idx for idx in payload["unique_new"] if idx not in dup_ids]
+    unique_indices = clean_unique + [item["id"] for item in promoted]
 
     return {
         "signature": payload["signature"],
@@ -686,6 +723,7 @@ def get_visible_results():
         "unique_indices": unique_indices,
         "df_new_valid": payload["df_new_valid"],
         "new_col": payload["new_col"],
+        "internal_dups": internal_dups,
     }
 
 
@@ -831,8 +869,11 @@ with tab1:
                 df_new_valid = df_new.dropna(subset=[new_col]).reset_index(drop=True)
                 new_names    = df_new_valid[new_col].astype(str).tolist()
 
-                with st.spinner("Screening…"):
+                with st.spinner("Screening against main database…"):
                     matches, unique_new = find_matches(main_names, new_names, threshold)
+
+                with st.spinner("Checking for within-list duplicates…"):
+                    internal_dups = find_internal_duplicates(new_names, threshold)
 
                 store_results({
                     "signature": {
@@ -846,6 +887,7 @@ with tab1:
                     "new_names": new_names,
                     "matches": matches,
                     "unique_new": unique_new,
+                    "internal_dups": internal_dups,
                     "df_new_valid": df_new_valid,
                     "new_col": new_col,
                 })
@@ -862,18 +904,21 @@ with tab1:
         unique_indices    = visible_results["unique_indices"]
         df_new_valid      = visible_results["df_new_valid"]
         new_col           = visible_results["new_col"]
+        internal_dups     = visible_results.get("internal_dups", [])
 
         st.markdown('<div class="section-header">&#9632;&nbsp; Results</div>', unsafe_allow_html=True)
 
-        s1, s2, s3, s4 = st.columns(4, gap="small")
+        s1, s2, s3, s4, s5 = st.columns(5, gap="small")
         with s1:
             st.markdown(f'<div class="stat-box"><div class="stat-num">{len(visible_results["main_names"]):,}</div><div class="stat-label">Main DB</div></div>', unsafe_allow_html=True)
         with s2:
             st.markdown(f'<div class="stat-box"><div class="stat-num">{len(visible_results["new_names"]):,}</div><div class="stat-label">Checked</div></div>', unsafe_allow_html=True)
         with s3:
-            st.markdown(f'<div class="stat-box"><div class="stat-num warn">{len(remaining_matches):,}</div><div class="stat-label">Matches</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="stat-box"><div class="stat-num warn">{len(remaining_matches):,}</div><div class="stat-label">In Main DB</div></div>', unsafe_allow_html=True)
         with s4:
-            st.markdown(f'<div class="stat-box"><div class="stat-num">{len(unique_indices):,}</div><div class="stat-label">New &amp; Unique</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="stat-box"><div class="stat-num warn">{len(internal_dups):,}</div><div class="stat-label">List Dups</div></div>', unsafe_allow_html=True)
+        with s5:
+            st.markdown(f'<div class="stat-box"><div class="stat-num">{len(unique_indices):,}</div><div class="stat-label">Clean &amp; Unique</div></div>', unsafe_allow_html=True)
 
         st.markdown("")
 
@@ -951,6 +996,23 @@ with tab1:
                             st.rerun()
             else:
                 st.success("No matches found.")
+
+        if internal_dups:
+            st.markdown("")
+            st.markdown('<div class="section-header">&#9664;&#9654;&nbsp; Duplicates within the new list</div>', unsafe_allow_html=True)
+            st.markdown("<small style='color:#3a4a5e'>These pairs are fuzzy duplicates of each other inside the uploaded file. Only the first occurrence is kept in the output — the duplicate is excluded.</small>", unsafe_allow_html=True)
+            st.markdown("")
+            for dup in sorted(internal_dups, key=lambda d: -d["score"]):
+                score_class = "high" if dup["score"] >= 90 else ""
+                st.markdown(f"""
+                <div class="match-card">
+                  <span class="match-names">
+                    <span class="match-main">{dup["name_keeper"]}</span>
+                    <span class="match-arrow"> &lArr; dup &mdash; </span>
+                    {dup["name_dup"]}
+                  </span>
+                  <span class="match-score {score_class}">{dup["score"]}%</span>
+                </div>""", unsafe_allow_html=True)
 
     else:
         st.markdown("""
