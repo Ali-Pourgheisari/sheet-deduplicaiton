@@ -7,74 +7,99 @@ from rapidfuzz import fuzz, process
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="List Screener",
-    page_icon="🏢",
+    page_title="List Toolbox",
+    page_icon="⚡",
     layout="wide",
 )
 
 # ── Styling ───────────────────────────────────────────────────────────────────
+
+# Theme state (must be set before CSS injection)
+if 'theme' not in st.session_state:
+    st.session_state.theme = 'dark'
+
+def _toggle_theme():
+    st.session_state.theme = 'light' if st.session_state.theme == 'dark' else 'dark'
+
+_is_dark = st.session_state.theme == 'dark'
+
+# Base CSS with CSS variables (dark defaults)
 st.markdown("""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-  html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
+  /* ── CSS Variables — dark defaults ── */
+  :root {
+    --bg:         #080b12;
+    --bg-card:    #0d1117;
+    --bg-card-b:  #0c1520;
+    --bg-inset:   #0a1018;
+    --bd:         #1e2d3d;
+    --bd-dim:     #141e2a;
+    --bd-hover:   #2a3d52;
+    --tx:         #c9d1e0;
+    --tx-h:       #f0f4ff;
+    --tx-dim:     #5a6a7e;
+    --tx-lo:      #3a4a5e;
+    --tx-mid:     #7a8a9e;
+    --accent:     #00ff88;
+    --accent-2:   #00e07a;
+    --accent-3:   #00cc6e;
+    --accent-bg:  rgba(0,255,136,0.08);
+    --accent-gl:  rgba(0,255,136,0.15);
+    --accent-gl2: rgba(0,255,136,0.25);
+    --accent-bd:  #1e3a28;
+    --warn:       #ff6b35;
+    --warn-bg:    rgba(255,107,53,0.1);
+    --btn-tx:     #060a0e;
+    --sec-bg:     #0d1520;
+    --sec-bg-h:   #131e2e;
   }
 
-  .stApp {
-    background: #080b12;
-    color: #c9d1e0;
-  }
+  html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+  .stApp { background: var(--bg); color: var(--tx); }
+
+  /* Reduce top padding so tabs appear high */
+  .main .block-container { padding-top: 0.8rem !important; padding-bottom: 2rem !important; }
+  header[data-testid="stHeader"] { height: 0 !important; visibility: hidden !important; }
 
   h1, h2, h3 { font-family: 'JetBrains Mono', monospace !important; }
 
-  /* ── Hero ── */
-  .hero {
-    position: relative;
-    overflow: hidden;
-    background: linear-gradient(135deg, #0d1117 0%, #0f1923 60%, #0a1a14 100%);
-    border: 1px solid #1e2d3d;
-    border-radius: 12px;
-    padding: 2.4rem 2.8rem;
-    margin-bottom: 2.2rem;
-  }
-  .hero::before {
-    content: '';
-    position: absolute;
-    top: -60px; right: -60px;
-    width: 220px; height: 220px;
-    background: radial-gradient(circle, rgba(0,255,136,0.12) 0%, transparent 70%);
-    pointer-events: none;
-  }
-  .hero-eyebrow {
+  /* ── App logo ── */
+  .app-logo {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.68rem;
-    color: #00e07a;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    margin-bottom: 0.6rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--tx-h);
+    letter-spacing: 0.04em;
+    padding: 0.45rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    white-space: nowrap;
   }
-  .hero h1 {
-    color: #f0f4ff;
-    font-size: 1.85rem;
-    margin: 0 0 0.5rem 0;
-    letter-spacing: -0.02em;
-  }
-  .hero h1 span { color: #00ff88; }
-  .hero p { color: #5a6a7e; margin: 0; font-size: 0.92rem; line-height: 1.6; }
+  .app-logo .dot { color: var(--accent); }
 
-  /* ── Upload panels ── */
-  .upload-panel {
-    background: linear-gradient(160deg, #0d1117 0%, #0c1520 100%);
-    border: 1px solid #1e2d3d;
-    border-radius: 10px;
-    padding: 1.4rem 1.6rem 1rem;
-    height: 100%;
+  /* ── Tab description ── */
+  .tab-desc {
+    background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-card-b) 100%);
+    border: 1px solid var(--bd);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 0.85rem 1.2rem;
+    margin-bottom: 1.6rem;
+    font-size: 0.86rem;
+    color: var(--tx-dim);
+    line-height: 1.6;
   }
+  .tab-desc strong { color: var(--tx); font-weight: 600; }
+
+  /* ── Upload label ── */
   .upload-label {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.65rem;
-    color: #00e07a;
+    color: var(--accent-2);
     letter-spacing: 0.18em;
     text-transform: uppercase;
     margin-bottom: 0.75rem;
@@ -87,10 +112,10 @@ st.markdown("""
   .section-header {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.65rem;
-    color: #3a4a5e;
+    color: var(--tx-lo);
     text-transform: uppercase;
     letter-spacing: 0.18em;
-    border-bottom: 1px solid #141e2a;
+    border-bottom: 1px solid var(--bd-dim);
     padding-bottom: 0.55rem;
     margin: 1.8rem 0 1.1rem 0;
     display: flex;
@@ -100,8 +125,8 @@ st.markdown("""
 
   /* ── Stat boxes ── */
   .stat-box {
-    background: linear-gradient(160deg, #0d1420 0%, #0a1018 100%);
-    border: 1px solid #1a2535;
+    background: linear-gradient(160deg, var(--bg-card) 0%, var(--bg-inset) 100%);
+    border: 1px solid var(--bd);
     border-radius: 10px;
     padding: 1.3rem 1rem;
     text-align: center;
@@ -113,28 +138,28 @@ st.markdown("""
     position: absolute;
     bottom: 0; left: 0; right: 0;
     height: 2px;
-    background: linear-gradient(90deg, transparent, #00ff8833, transparent);
+    background: linear-gradient(90deg, transparent, var(--accent-bg), transparent);
   }
   .stat-num {
     font-family: 'JetBrains Mono', monospace;
     font-size: 2.1rem;
     font-weight: 700;
-    color: #00ff88;
+    color: var(--accent);
     line-height: 1;
     margin-bottom: 0.35rem;
   }
-  .stat-num.warn { color: #ff6b35; }
+  .stat-num.warn { color: var(--warn); }
   .stat-label {
     font-size: 0.7rem;
-    color: #3a4a5e;
+    color: var(--tx-lo);
     text-transform: uppercase;
     letter-spacing: 0.14em;
   }
 
   /* ── Match cards ── */
   .match-card {
-    background: linear-gradient(135deg, #0d1520 0%, #0a1018 100%);
-    border: 1px solid #1a2535;
+    background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-inset) 100%);
+    border: 1px solid var(--bd);
     border-radius: 8px;
     padding: 0.65rem 1rem;
     margin-bottom: 0.35rem;
@@ -145,49 +170,77 @@ st.markdown("""
     align-items: center;
     transition: border-color 0.15s;
   }
-  .match-card:hover { border-color: #2a3d52; }
+  .match-card:hover { border-color: var(--bd-hover); }
   .match-score {
-    color: #ff6b35;
+    color: var(--warn);
     font-weight: 600;
-    background: rgba(255,107,53,0.1);
+    background: var(--warn-bg);
     padding: 0.15rem 0.45rem;
     border-radius: 4px;
     white-space: nowrap;
     margin-left: 0.8rem;
     flex-shrink: 0;
   }
-  .match-score.high { color: #00ff88; background: rgba(0,255,136,0.08); }
-  .match-names { color: #7a8a9e; overflow: hidden; }
-  .match-main  { color: #c9d1e0; font-weight: 500; }
-  .match-arrow { color: #2a3a4e; margin: 0 0.4rem; }
+  .match-score.high { color: var(--accent); background: var(--accent-bg); }
+  .match-names { color: var(--tx-mid); overflow: hidden; }
+  .match-main  { color: var(--tx); font-weight: 500; }
+  .match-arrow { color: var(--bd-hover); margin: 0 0.4rem; }
 
   /* ── Threshold panel ── */
   .threshold-panel {
-    background: linear-gradient(160deg, #0d1117 0%, #0c1520 100%);
-    border: 1px solid #1e2d3d;
+    background: linear-gradient(160deg, var(--bg-card) 0%, var(--bg-card-b) 100%);
+    border: 1px solid var(--bd);
     border-radius: 10px;
     padding: 1.2rem 1.6rem 0.8rem;
     margin-bottom: 0.5rem;
   }
 
+  /* ── Tabs ── */
+  .stTabs [data-baseweb="tab-list"] {
+    background: transparent !important;
+    border-bottom: 1px solid var(--bd) !important;
+    gap: 3px;
+    padding-bottom: 0;
+    margin-bottom: 0;
+  }
+  .stTabs [data-baseweb="tab"] {
+    background: transparent !important;
+    color: var(--tx-lo) !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.72rem !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    padding: 0.5rem 1.5rem !important;
+    border-radius: 6px 6px 0 0 !important;
+    border: 1px solid transparent !important;
+    border-bottom: none !important;
+  }
+  .stTabs [aria-selected="true"] {
+    background: var(--bg-card) !important;
+    color: var(--accent) !important;
+    border-color: var(--bd) !important;
+    border-bottom-color: var(--bg-card) !important;
+  }
+  .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+  .stTabs [data-baseweb="tab-border"]    { display: none !important; }
+  .stTabs [data-baseweb="tab-panel"]     { padding-top: 1.2rem !important; }
+
   /* ── Streamlit overrides ── */
   div[data-testid="stFileUploader"] {
     background: transparent !important;
-    border: 1px dashed #1e2d3d !important;
+    border: 1px dashed var(--bd) !important;
     border-radius: 8px !important;
     padding: 0.6rem !important;
   }
-  div[data-testid="stFileUploader"]:hover {
-    border-color: #00ff8844 !important;
-  }
+  div[data-testid="stFileUploader"]:hover { border-color: var(--accent-bd) !important; }
 
-  .stSlider > div > div > div { background: #00ff88 !important; }
+  .stSlider > div > div > div { background: var(--accent) !important; }
   [data-testid="stSlider"] [data-testid="stTickBarMin"],
-  [data-testid="stSlider"] [data-testid="stTickBarMax"] { color: #3a4a5e !important; }
+  [data-testid="stSlider"] [data-testid="stTickBarMax"] { color: var(--tx-lo) !important; }
 
   .stButton > button {
-    background: linear-gradient(135deg, #00ff88, #00cc6e) !important;
-    color: #060a0e !important;
+    background: linear-gradient(135deg, var(--accent), var(--accent-3)) !important;
+    color: var(--btn-tx) !important;
     font-family: 'JetBrains Mono', monospace !important;
     font-weight: 600 !important;
     border: none !important;
@@ -196,21 +249,18 @@ st.markdown("""
     font-size: 0.8rem !important;
     letter-spacing: 0.04em !important;
     width: auto !important;
-    box-shadow: 0 0 20px rgba(0,255,136,0.15) !important;
+    box-shadow: 0 0 20px var(--accent-gl) !important;
   }
   .stButton > button:hover {
-    background: linear-gradient(135deg, #00ff99, #00e07a) !important;
-    box-shadow: 0 0 28px rgba(0,255,136,0.25) !important;
+    background: linear-gradient(135deg, var(--accent-2), var(--accent)) !important;
+    box-shadow: 0 0 28px var(--accent-gl2) !important;
   }
-
-  .stButton > button[data-testid="baseButton-primary"] {
-    min-height: 2.4rem !important;
-  }
+  .stButton > button[data-testid="baseButton-primary"] { min-height: 2.4rem !important; }
 
   .stButton > button[data-testid="baseButton-secondary"] {
-    background: #0d1520 !important;
-    color: #7a8a9e !important;
-    border: 1px solid #1e2d3d !important;
+    background: var(--sec-bg) !important;
+    color: var(--tx-mid) !important;
+    border: 1px solid var(--bd) !important;
     box-shadow: none !important;
     padding: 0.22rem 0.5rem !important;
     font-size: 0.7rem !important;
@@ -220,30 +270,87 @@ st.markdown("""
     border-radius: 6px !important;
   }
   .stButton > button[data-testid="baseButton-secondary"]:hover {
-    background: #131e2e !important;
-    color: #c9d1e0 !important;
-    border-color: #2a3d52 !important;
+    background: var(--sec-bg-h) !important;
+    color: var(--tx) !important;
+    border-color: var(--bd-hover) !important;
+  }
+
+  /* Theme toggle button — pill shape, subtle */
+  #_theme_anchor + div .stButton > button {
+    background: var(--sec-bg) !important;
+    color: var(--tx-dim) !important;
+    border: 1px solid var(--bd) !important;
+    box-shadow: none !important;
+    font-size: 0.74rem !important;
+    font-weight: 400 !important;
+    letter-spacing: 0.04em !important;
+    padding: 0.3rem 1rem !important;
+    min-height: 1.8rem !important;
+    border-radius: 20px !important;
+    width: 100% !important;
+  }
+  #_theme_anchor + div .stButton > button:hover {
+    background: var(--sec-bg-h) !important;
+    border-color: var(--bd-hover) !important;
+    color: var(--tx) !important;
+    box-shadow: none !important;
   }
 
   .stDataFrame {
-    border: 1px solid #1a2535 !important;
+    border: 1px solid var(--bd) !important;
     border-radius: 8px !important;
     overflow: hidden !important;
   }
-
   .stAlert { border-radius: 8px !important; }
 
   div[data-testid="stDownloadButton"] button {
-    background: #0d1520 !important;
-    color: #00ff88 !important;
-    border: 1px solid #1e3a28 !important;
+    background: var(--sec-bg) !important;
+    color: var(--accent) !important;
+    border: 1px solid var(--accent-bd) !important;
     box-shadow: none !important;
     border-radius: 7px !important;
     font-size: 0.78rem !important;
   }
   div[data-testid="stDownloadButton"] button:hover {
-    background: #0f1e2a !important;
-    border-color: #00ff8844 !important;
+    background: var(--sec-bg-h) !important;
+    border-color: var(--accent-bg) !important;
+  }
+</style>
+""", unsafe_allow_html=True)
+
+# Inject light theme variable overrides when active
+if not _is_dark:
+    st.markdown("""
+<style>
+  :root {
+    --bg:         #f2f5fb;
+    --bg-card:    #ffffff;
+    --bg-card-b:  #eef2fa;
+    --bg-inset:   #e8edf8;
+    --bd:         #cdd5e8;
+    --bd-dim:     #e2e8f4;
+    --bd-hover:   #a0b0cc;
+    --tx:         #252e42;
+    --tx-h:       #0f1623;
+    --tx-dim:     #647088;
+    --tx-lo:      #8898b4;
+    --tx-mid:     #506078;
+    --accent:     #00835a;
+    --accent-2:   #007050;
+    --accent-3:   #006044;
+    --accent-bg:  rgba(0,131,90,0.09);
+    --accent-gl:  rgba(0,131,90,0.14);
+    --accent-gl2: rgba(0,131,90,0.22);
+    --accent-bd:  #a8d8c0;
+    --warn:       #c94510;
+    --warn-bg:    rgba(201,69,16,0.1);
+    --btn-tx:     #ffffff;
+    --sec-bg:     #eef2fa;
+    --sec-bg-h:   #e2e8f4;
+  }
+  .stApp { background: var(--bg) !important; color: var(--tx) !important; }
+  .stTabs [aria-selected="true"] {
+    border-bottom-color: var(--bg) !important;
   }
 </style>
 """, unsafe_allow_html=True)
@@ -611,18 +718,29 @@ def append_lists(df_main, df_new, mapping):
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 
-st.markdown("""
-<div class="hero">
-  <div class="hero-eyebrow">&#9632; Exclusion List Automation</div>
-  <h1>List <span>Tools</span></h1>
-  <p>Screen new entries against your database, or append and merge two lists with custom column mapping.</p>
-</div>
-""", unsafe_allow_html=True)
+# Header row: logo left, theme toggle right
+_hcol_logo, _, _hcol_btn = st.columns([5, 7, 2])
+with _hcol_logo:
+    st.markdown('<div class="app-logo"><span class="dot">◼</span> List Toolbox</div>',
+                unsafe_allow_html=True)
+with _hcol_btn:
+    st.markdown('<span id="_theme_anchor"></span>', unsafe_allow_html=True)
+    _theme_label = "☀ Light" if _is_dark else "☾ Dark"
+    st.button(_theme_label, on_click=_toggle_theme, key="_theme_btn")
 
-tab1, tab2 = st.tabs(["List Screener", "List Appender"])
+st.markdown("<div style='margin-bottom:0.2rem'></div>", unsafe_allow_html=True)
+
+tab1, tab2 = st.tabs(["  List Screener  ", "  List Appender  "])
 
 # ── Tab 1: List Screener ───────────────────────────────────────────────────────
 with tab1:
+
+    st.markdown("""
+<div class="tab-desc">
+  <strong>List Screener</strong> — upload your main database and a new list, then
+  run a fuzzy company-name match to flag entries that already exist. Move confirmed
+  matches out, keep clean records in.
+</div>""", unsafe_allow_html=True)
 
     # ── Upload ─────────────────────────────────────────────────────────────────
     col_a, col_b = st.columns(2, gap="medium")
@@ -845,6 +963,13 @@ with tab1:
 
 # ── Tab 2: List Appender ───────────────────────────────────────────────────────
 with tab2:
+
+    st.markdown("""
+<div class="tab-desc">
+  <strong>List Appender</strong> — merge one or more files into your main list.
+  Map each file's columns to your main list's columns, detect duplicate emails,
+  and download the combined result as a single CSV.
+</div>""", unsafe_allow_html=True)
 
     # ── Upload ─────────────────────────────────────────────────────────────────
     ap_col_a, ap_col_b = st.columns(2, gap="medium")
