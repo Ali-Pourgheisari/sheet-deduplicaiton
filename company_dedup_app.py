@@ -300,18 +300,23 @@ def _detect_encoding(raw: bytes) -> str:
     try:
         import chardet
         result = chardet.detect(raw)
-        enc = result.get('encoding') or 'utf-8'
-        # chardet sometimes returns 'ascii' for mostly-ASCII files that are
-        # actually UTF-8 — promote it so accented chars still decode correctly
-        return 'utf-8' if enc.lower() == 'ascii' else enc
+        enc = (result.get('encoding') or 'utf-8').lower()
+        confidence = result.get('confidence', 0)
+        # 'ascii' is always safe to promote to utf-8
+        if enc == 'ascii':
+            return 'utf-8'
+        # Low-confidence guesses cause more harm than good — default to utf-8
+        if confidence < 0.7:
+            return 'utf-8'
+        return enc
     except ImportError:
         return 'utf-8'
 
 def read_file(f, nrows=None):
-    if f.name.endswith('.csv'):
-        raw = f.read()
-        f.seek(0)
+    raw = f.read()
+    f.seek(0)
 
+    if f.name.lower().endswith('.csv'):
         # Detect separator from first 4 KB
         sample = raw[:4096].decode('utf-8', errors='replace')
         try:
@@ -319,18 +324,19 @@ def read_file(f, nrows=None):
         except csv.Error:
             sep = ','
 
-        # Try chardet-detected encoding first, then common fallbacks
+        # Use io.BytesIO so every attempt reads the same bytes reliably.
+        # cp1254 (Turkish) is only tried when chardet specifically detects it —
+        # adding it blindly to the fallback chain mis-decodes non-Turkish files.
         detected = _detect_encoding(raw)
-        for encoding in dict.fromkeys([detected, 'utf-8-sig', 'utf-8', 'cp1254', 'cp1252', 'latin-1']):
+        for encoding in dict.fromkeys([detected, 'utf-8-sig', 'utf-8', 'cp1252', 'latin-1']):
             try:
-                f.seek(0)
-                return pd.read_csv(f, sep=sep, nrows=nrows, encoding=encoding)
+                return pd.read_csv(io.BytesIO(raw), sep=sep, nrows=nrows, encoding=encoding)
             except (UnicodeDecodeError, LookupError):
                 pass
 
-        f.seek(0)
-        return pd.read_csv(f, sep=sep, nrows=nrows, encoding='latin-1', encoding_errors='replace')
-    return pd.read_excel(f, nrows=nrows)
+        return pd.read_csv(io.BytesIO(raw), sep=sep, nrows=nrows, encoding='latin-1', encoding_errors='replace')
+
+    return pd.read_excel(io.BytesIO(raw), nrows=nrows)
 
 def find_matches(main_names, new_names, threshold):
     """
