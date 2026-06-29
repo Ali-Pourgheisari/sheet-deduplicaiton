@@ -321,7 +321,7 @@ def read_file(f, nrows=None):
 
         # Try chardet-detected encoding first, then common fallbacks
         detected = _detect_encoding(raw)
-        for encoding in dict.fromkeys([detected, 'utf-8-sig', 'utf-8', 'cp1252', 'latin-1']):
+        for encoding in dict.fromkeys([detected, 'utf-8-sig', 'utf-8', 'cp1254', 'cp1252', 'latin-1']):
             try:
                 f.seek(0)
                 return pd.read_csv(f, sep=sep, nrows=nrows, encoding=encoding)
@@ -603,7 +603,7 @@ with tab1:
 
                 st.markdown("")
                 dl_a, dl_b = st.columns(2, gap="small")
-                csv_bytes = df_out.to_csv(index=False).encode("utf-8")
+                csv_bytes = df_out.to_csv(index=False).encode("utf-8-sig")
                 with dl_a:
                     st.download_button(
                         label="&#11015;  Download CSV",
@@ -789,7 +789,7 @@ with tab2:
 
                 st.markdown("")
                 ap_dl_a, ap_dl_b = st.columns(2, gap="small")
-                ap_csv = df_result.to_csv(index=False).encode("utf-8")
+                ap_csv = df_result.to_csv(index=False).encode("utf-8-sig")
                 with ap_dl_a:
                     st.download_button(
                         label="&#11015;  Download CSV",
