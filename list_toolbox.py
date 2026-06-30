@@ -1152,7 +1152,11 @@ with tab2:
             email_options = [EMAIL_SKIP] + ap_main_cols
             email_default = email_options.index(email_auto) if email_auto else 0
             ap_email_col_choice = st.selectbox(
-                "Skip rows whose email already exists in the main list",
+                "Skip rows whose **{col}** already exists in the main list".format(
+                    col=st.session_state.get("ap_email_col", email_options[email_default])
+                    if st.session_state.get("ap_email_col", email_options[email_default]) != EMAIL_SKIP
+                    else "selected column"
+                ),
                 email_options,
                 index=email_default,
                 key="ap_email_col",
