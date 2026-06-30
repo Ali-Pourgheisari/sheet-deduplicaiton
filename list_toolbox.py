@@ -619,6 +619,15 @@ def _detect_encoding(raw: bytes) -> str:
     except ImportError:
         return 'utf-8'
 
+def _has_junk_chars(df: pd.DataFrame) -> bool:
+    """Return True if any string column contains U+FFFD — sign of a wrong encoding."""
+    for col in df.columns:
+        if df[col].dtype == object:
+            if df[col].head(100).astype(str).str.contains('�', na=False).any():
+                return True
+    return False
+
+
 def read_file(f, nrows=None):
     raw = f.read()
     f.seek(0)
@@ -631,14 +640,17 @@ def read_file(f, nrows=None):
         except csv.Error:
             sep = ','
 
-        # Use io.BytesIO so every attempt reads the same bytes reliably.
-        # cp1254 (Turkish) is only tried when chardet specifically detects it —
-        # adding it blindly to the fallback chain mis-decodes non-Turkish files.
+        # Try encodings in order. Skip any that decode without error but still
+        # produce U+FFFD replacement chars — that means chardet picked the wrong
+        # encoding and pandas silently mangled the bytes instead of raising.
+        # latin-1 maps every byte 1:1 so it can never produce U+FFFD; it stays
+        # as the clean last resort.
         detected = _detect_encoding(raw)
         for encoding in dict.fromkeys([detected, 'utf-8-sig', 'utf-8', 'cp1252', 'latin-1']):
             try:
                 df = pd.read_csv(io.BytesIO(raw), sep=sep, nrows=nrows, encoding=encoding)
-                return normalize_country_cols(df)
+                if not _has_junk_chars(df):
+                    return normalize_country_cols(df)
             except (UnicodeDecodeError, LookupError):
                 pass
 
@@ -1014,7 +1026,7 @@ with tab1:
 
                 st.markdown("")
                 dl_a, dl_b = st.columns(2, gap="small")
-                csv_bytes = df_out.to_csv(index=False).encode("utf-8-sig")
+                csv_bytes = df_out.to_csv(index=False).encode("utf-8")
                 _src_name = visible_results["signature"].get("new_file", "output")
                 with dl_a:
                     st.download_button(
@@ -1239,7 +1251,7 @@ with tab2:
 
                 st.markdown("")
                 ap_dl_a, ap_dl_b = st.columns(2, gap="small")
-                ap_csv = df_result.to_csv(index=False).encode("utf-8-sig")
+                ap_csv = df_result.to_csv(index=False).encode("utf-8")
                 _ap_src_name = getattr(ap_main_file, "name", "output")
                 with ap_dl_a:
                     st.download_button(
