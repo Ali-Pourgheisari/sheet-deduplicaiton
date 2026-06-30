@@ -743,6 +743,45 @@ def demote_match(match_id: int) -> None:
 
 APPEND_SKIP = "— Skip / leave empty —"
 
+WEBSITE_COL_HINTS     = ('website', 'webpage', 'weburl', 'homepage', 'siteurl')
+EMAILDOMAIN_COL_HINTS = ('emaildomain', 'maildomain', 'domainemail')
+
+def _is_website_col(col_name: str) -> bool:
+    k = col_key(col_name)
+    return any(h in k for h in WEBSITE_COL_HINTS)
+
+def _is_emaildomain_col(col_name: str) -> bool:
+    k = col_key(col_name)
+    return any(h in k for h in EMAILDOMAIN_COL_HINTS)
+
+def _norm_website(val) -> str:
+    """Ensure https://domain.tld — strips path, upgrades http, adds https if missing."""
+    if not isinstance(val, str) or not val.strip():
+        return val
+    v = val.strip()
+    if v.startswith('http://'):
+        v = 'https://' + v[7:]
+    elif not v.startswith('https://'):
+        v = 'https://' + v
+    rest = v[8:]  # after 'https://'
+    rest = rest.split('/')[0].split('?')[0].split('#')[0]
+    return 'https://' + rest
+
+def _norm_emaildomain(val) -> str:
+    """Return bare domain.tld — handles full emails (after @), URLs, or plain domains."""
+    if not isinstance(val, str) or not val.strip():
+        return val
+    v = val.strip()
+    if '@' in v:
+        v = v.split('@', 1)[1]
+    if '://' in v:
+        v = v.split('://', 1)[1]
+    if v.lower().startswith('www.'):
+        v = v[4:]
+    v = v.split('/')[0].split('?')[0].split('#')[0]
+    return v
+
+
 def append_lists(df_main, df_new, mapping):
     # mapping: {main_col: source_col_in_df_new | APPEND_SKIP}
     new_rows = {}
@@ -1148,6 +1187,15 @@ with tab2:
 
                         rows_before = len(df_result)
                         df_result = append_lists(df_result, df_ap_new, file_mapping)
+                        for _col in df_result.columns:
+                            if _is_website_col(_col):
+                                df_result.loc[rows_before:, _col] = (
+                                    df_result.loc[rows_before:, _col].apply(_norm_website)
+                                )
+                            elif _is_emaildomain_col(_col):
+                                df_result.loc[rows_before:, _col] = (
+                                    df_result.loc[rows_before:, _col].apply(_norm_emaildomain)
+                                )
                         total_appended += len(df_result) - rows_before
 
                 st.markdown('<div class="section-header">&#9632;&nbsp; Result</div>', unsafe_allow_html=True)
