@@ -1081,6 +1081,7 @@ with tab2:
 
     # ── Per-file column mapping ─────────────────────────────────────────────────
     ap_mappings  = {}   # {filename: {main_col: source_col | APPEND_SKIP}}
+    ap_ranges    = {}   # {filename: (from_row, to_row)}  1-indexed, to_row=0 means all
     ap_email_col = None
 
     if ap_main_file and ap_new_files:
@@ -1130,6 +1131,18 @@ with tab2:
 
                     ap_mappings[ap_file.name] = file_mapping
 
+                    st.markdown("<div style='margin-top:0.8rem;margin-bottom:0.2rem'><small style='color:#3a4a5e;font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:0.1em'>&#9632;&nbsp; Row range</small></div>", unsafe_allow_html=True)
+                    _range_l, _range_r = st.columns(2, gap="small")
+                    with _range_l:
+                        _from = st.number_input("From row", min_value=1, value=1, step=1,
+                                                key=f"ap_from_{ap_file.name}",
+                                                help="First row to include (1 = first data row)")
+                    with _range_r:
+                        _to = st.number_input("To row", min_value=0, value=0, step=1,
+                                              key=f"ap_to_{ap_file.name}",
+                                              help="Last row to include (0 = all remaining rows)")
+                    ap_ranges[ap_file.name] = (int(_from), int(_to))
+
             st.markdown("")
             st.markdown('<div class="section-header">&#9632;&nbsp; 04 &mdash; Email duplicate check</div>', unsafe_allow_html=True)
             EMAIL_SKIP = "— No email check —"
@@ -1165,6 +1178,12 @@ with tab2:
                     with st.spinner(f"Merging {ap_file.name}…"):
                         df_ap_new   = read_file(ap_file)
                         file_mapping = ap_mappings[ap_file.name]
+
+                        # Apply row range (1-indexed; to_row=0 means all)
+                        _from_r, _to_r = ap_ranges.get(ap_file.name, (1, 0))
+                        _start = max(0, _from_r - 1)
+                        _end   = _to_r if _to_r > 0 else len(df_ap_new)
+                        df_ap_new = df_ap_new.iloc[_start:_end].reset_index(drop=True)
 
                         # Email deduplication filter
                         if ap_email_col and ap_email_col in df_result.columns:
