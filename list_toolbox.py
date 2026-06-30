@@ -604,23 +604,20 @@ def detect_company_col(columns) -> str:
     return columns[0]
 
 def read_file(f, nrows=None):
+    raw = f.read()
     if f.name.lower().endswith('.csv'):
-        sample = f.read(4096).decode('utf-8', errors='replace')
-        f.seek(0)
+        sample = raw[:4096].decode('utf-8', errors='replace')
         try:
             sep = csv.Sniffer().sniff(sample, delimiters=',;').delimiter
         except csv.Error:
             sep = ','
-        for encoding in ('utf-8', 'cp1252', 'latin-1'):
+        for encoding in ('utf-8-sig', 'utf-8', 'cp1252', 'latin-1'):
             try:
-                df = pd.read_csv(f, sep=sep, nrows=nrows, encoding=encoding)
-                return normalize_country_cols(df)
-            except UnicodeDecodeError:
-                f.seek(0)
-        f.seek(0)
-        return normalize_country_cols(pd.read_csv(f, sep=sep, nrows=nrows, encoding='latin-1', encoding_errors='replace'))
-    f.seek(0)
-    return normalize_country_cols(pd.read_excel(f, nrows=nrows))
+                return normalize_country_cols(pd.read_csv(io.BytesIO(raw), sep=sep, nrows=nrows, encoding=encoding))
+            except (UnicodeDecodeError, LookupError):
+                pass
+        return normalize_country_cols(pd.read_csv(io.BytesIO(raw), sep=sep, nrows=nrows, encoding='latin-1', encoding_errors='replace'))
+    return normalize_country_cols(pd.read_excel(io.BytesIO(raw), nrows=nrows))
 
 def find_matches(main_names, new_names, threshold):
     """
