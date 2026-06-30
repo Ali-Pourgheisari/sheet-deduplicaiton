@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import io
 import csv
+from datetime import date
 from rapidfuzz import fuzz, process
 
 # ── Page config ──────────────────────────────────────────────────────────────
@@ -549,6 +550,25 @@ def normalize_country_cols(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].apply(_norm_country)
     return df
 
+def _output_filename(source_name: str, ext: str) -> str:
+    """
+    Build a download filename from source_name:
+    strip the file extension, remove any trailing date, append today's date.
+    ext should include the dot, e.g. '.csv' or '.xlsx'.
+    """
+    stem = source_name
+    for e in ('.xlsx', '.xls', '.csv'):
+        if stem.lower().endswith(e):
+            stem = stem[:-len(e)]
+            break
+    # Strip trailing date in common formats: YYYY-MM-DD, DD-MM-YYYY, YYYYMMDD
+    stem = re.sub(r'[\s_\-]+\d{4}[\-_\.]\d{2}[\-_\.]\d{2}$', '', stem)
+    stem = re.sub(r'[\s_\-]+\d{2}[\-_\.]\d{2}[\-_\.]\d{4}$', '', stem)
+    stem = re.sub(r'[\s_\-]+\d{8}$', '', stem)
+    stem = stem.rstrip(' _-')
+    return f"{stem}_{date.today().strftime('%Y-%m-%d')}{ext}"
+
+
 def clean_for_output(name: str) -> str:
     """Remove numbers and demo tags for the output file."""
     if not isinstance(name, str):
@@ -995,11 +1015,12 @@ with tab1:
                 st.markdown("")
                 dl_a, dl_b = st.columns(2, gap="small")
                 csv_bytes = df_out.to_csv(index=False).encode("utf-8-sig")
+                _src_name = visible_results["signature"].get("new_file", "output")
                 with dl_a:
                     st.download_button(
                         label="&#11015;  Download CSV",
                         data=csv_bytes,
-                        file_name="new_unique_companies.csv",
+                        file_name=_output_filename(_src_name, ".csv"),
                         mime="text/csv",
                         use_container_width=True,
                     )
@@ -1010,7 +1031,7 @@ with tab1:
                     st.download_button(
                         label="&#11015;  Download Excel",
                         data=excel_buf.getvalue(),
-                        file_name="new_unique_companies.xlsx",
+                        file_name=_output_filename(_src_name, ".xlsx"),
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                     )
@@ -1219,11 +1240,12 @@ with tab2:
                 st.markdown("")
                 ap_dl_a, ap_dl_b = st.columns(2, gap="small")
                 ap_csv = df_result.to_csv(index=False).encode("utf-8-sig")
+                _ap_src_name = getattr(ap_main_file, "name", "output")
                 with ap_dl_a:
                     st.download_button(
                         label="&#11015;  Download CSV",
                         data=ap_csv,
-                        file_name="appended_list.csv",
+                        file_name=_output_filename(_ap_src_name, ".csv"),
                         mime="text/csv",
                         use_container_width=True,
                     )
@@ -1234,7 +1256,7 @@ with tab2:
                     st.download_button(
                         label="&#11015;  Download Excel",
                         data=ap_excel_buf.getvalue(),
-                        file_name="appended_list.xlsx",
+                        file_name=_output_filename(_ap_src_name, ".xlsx"),
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                     )
